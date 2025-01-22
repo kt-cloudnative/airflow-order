@@ -1,0 +1,74 @@
+from datetime import datetime, timedelta
+from kubernetes.client import models as k8s
+from airflow.providers.http.operators.http import SimpleHttpOperator
+from airflow.operators.dummy import DummyOperator
+from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.subdag import SubDagOperator
+from airflow.utils.trigger_rule import TriggerRule
+from airflow.utils.helpers import chain, cross_downstream
+from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
+    KubernetesPodOperator,
+)
+import pendulum
+local_tz = pendulum.timezone("Asia/Seoul")
+import sys
+sys.path.append('/opt/bitnami/airflow/dags/git_sa-common')
+
+from icis_common import *
+COMMON = ICISCmmn(DOMAIN='oder',ENV='prd-tz', NAMESPACE='t-order'
+                , WORKFLOW_NAME='BI_CSAB806B',WORKFLOW_ID='e695fe7188244d1f9f1e09749fe84bce', APP_NAME='NBSS_TORD', CHNL_TYPE='TO', USER_ID='91337909')
+
+with COMMON.getICISDAG({
+    'dag_id':'icis-oder-BI_CSAB806B-0.0.prd-tz.1.0'
+    ,'schedule_interval':'@once'
+    ,'start_date': datetime(2025, 1, 10, 10, 33, 00, tzinfo=local_tz)
+    ,'end_date': None
+    ,'paused': False
+    ,'max_active_runs': 16
+})as dag:
+
+    authCheck = COMMON.getICISAuthCheckWflow('e695fe7188244d1f9f1e09749fe84bce')
+
+    csab806bJob_vol = []
+    csab806bJob_volMnt = []
+    csab806bJob_env = [getICISConfigMap('icis-oder-cmmn-configmap'), getICISSecret('icis-oder-cmmn-secret'), getICISConfigMap('icis-oder-configmap'), getICISSecret('icis-oder-secret')]
+    csab806bJob_env.extend([getICISConfigMap('icis-oder-baseinfo-batch-mng-configmap'), getICISSecret('icis-oder-baseinfo-batch-mng-secret'), getICISConfigMap('icis-oder-baseinfo-batch-configmap'), getICISSecret('icis-oder-baseinfo-batch-secret')])
+    csab806bJob_env.extend([getICISConfigMap('icis-oder-truststore.jks')])
+
+    csab806bJob = COMMON.getICISKubernetesPodOperator_v1({
+        'id' : 'eedbe882b5cb44ffa757e6ee2ea3c53a',
+        'volumes': csab806bJob_vol,
+        'volume_mounts': csab806bJob_volMnt,
+        'env_from':csab806bJob_env,
+        'task_id':'csab806bJob',
+        'image':'/icis/icis-oder-baseinfo-batch:0.7.1.5',
+        'arguments':["--job.name=csab806bJob", "workDate=20240720", "requestDate=${YYYYMMDDHHMISSSSS}"],
+        'taskAlrmStYn': 'N', # 시작 알림 전송
+        'taskAlrmFnsYn': 'N' # 종료 알림 전송
+    })
+
+      
+       
+      
+
+    Complete = COMMON.getICISCompleteWflowTask('e695fe7188244d1f9f1e09749fe84bce')
+
+    workflow = COMMON.getICISPipeline([
+        authCheck,
+        csab806bJob,
+        Complete
+    ]) 
+
+    # authCheck >> csab806bJob >> Complete
+    workflow
+
+
+
+
+
+
+
+
